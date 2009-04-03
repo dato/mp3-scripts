@@ -17,10 +17,11 @@ import mutagen.easyid3
 import lastfm.client
 
 try:
-    import mx.DateTime
-    _has_mx_datetime = True
+    from dateutil.parser import parse as parse_date
 except ImportError:
-    _has_mx_datetime = False
+    _has_parse_date = False
+else:
+    _has_parse_date = True
 
 ##
 
@@ -84,9 +85,9 @@ def get_data(path):
 ##
 
 def parse_time(option, opt, value):
-    """Return seconds since epoch, parsing value with mx.DateTime.
+    """Return seconds since epoch, parsing value with python-dateutil.
 
-    The string 'now' is recognized, and time.time() is returned. If mx.DateTime
+    The string 'now' is recognized, and time.time() is returned. If dateutil
     is not available, and value is not 'now' or an integer, OptionValueError
     is raised.
     """
@@ -96,12 +97,16 @@ def parse_time(option, opt, value):
         try:
             return int(value)
         except ValueError:
-            if _has_mx_datetime:
-                return mx.DateTime.DateTimeFrom(value).ticks()
+            if _has_parse_date:
+                try:
+                    return int(parse_date(value).strftime('%s'))
+                except ValueError, e:
+                    raise optparse.OptionValueError(
+                        "can't parse %r as a timestamp: %s" % (value, e))
             else:
                 raise optparse.OptionValueError(
                     "bad value for %s: %s is not an int or 'now', "
-                    'and mx.DateTime is not available' % (opt, value))
+                    'and python-dateutil is not available' % (opt, value))
 
 class Option(optparse.Option):
     TYPES = optparse.Option.TYPES + ('time',)
