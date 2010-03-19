@@ -138,7 +138,7 @@ def tag_file(path, tags):
   if OPTIONS.verbose:
     print 'Applying to %s:' % (os.path.basename(path))
     pprint.pprint(tags)
-  
+
   if not OPTIONS.dry_run:
     if OPTIONS.clear_existing_tag_first:
       info.delete()
