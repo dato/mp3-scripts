@@ -11,13 +11,14 @@ import mutagen
 import mutagen.mp3
 import mutagen.easyid3
 
-##
+# Group names in the following regular expresions must match tag names as
+# provided by Mutagen. Hence "tracknumber" and "date" over "track" and "year".
 
 BASENAME_REGEX = re.compile(
     r'^(?:(?P<tracknumber>\d+)_)?(?P<artist>.+?) - (?P<title>.+)\.\w+$')
 
 DIRNAME_REGEX = re.compile(
-    r'^.*?/(?:\((?P<year>\d+)\w?\) )?(?P<album>[^/]+)(?:/(?:cd|disco|vol) *\d+(?:[^/]*))?$')
+    r'^.*?/(?:\((?P<date>\d+)\w?\) )?(?P<album>[^/]+)(?:/(?:cd|disco|vol) *\d+(?:[^/]*))?$')
 
 FILENAME_FMT = '%(tracknumber)02d_%(artist)s - %(title)s'
 
