@@ -21,6 +21,7 @@ DIRNAME_REGEX = re.compile(
     r'^.*?/(?:\((?P<date>\d+)\w?\) )?(?P<album>[^/]+)(?:/(?:cd|disco|vol)\s*(?P<discnumber>\d+)(?:[^/]*))?$', re.I)
 
 FILENAME_FMT = '%(tracknumber)02d_%(artist)s - %(title)s'
+FILENAME_FMT_NO_TRACKNUMBER = '%(artist)s - %(title)s'
 
 OPTIONS = None
 
@@ -63,10 +64,14 @@ def main():
     for f in args:
       tags = get_tags_with_mutagen(f)
       extension = os.path.splitext(f)[1]
-      # TODO: tracknumber may not be present
-      tags['tracknumber'] = int(tags['tracknumber'].split('/')[0])
+      try:
+        tags['tracknumber'] = int(tags['tracknumber'].split('/')[0])
+      except KeyError:
+        filename_fmt = FILENAME_FMT_NO_TRACKNUMBER
+      else:
+        filename_fmt = FILENAME_FMT
 
-      newf = (FILENAME_FMT % tags) + extension
+      newf = (filename_fmt % tags) + extension
 
       if OPTIONS.verbose:
         print newf
