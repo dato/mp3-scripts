@@ -132,6 +132,8 @@ def get_tags_with_mutagen(path):
 
 ##
 
+_did_old_mutagen_warning = False
+
 def tag_file(path, tags):
   info = mutagen.File(path)
 
@@ -146,6 +148,15 @@ def tag_file(path, tags):
       info.filename = path
   else:
     kwargs = {}
+
+  if ('discnumber' in tags
+      and mutagen.version < (1, 19)):
+    global _did_old_mutagen_warning
+    if not _did_old_mutagen_warning:
+      print ('W: "discnumber" found, but Mutagen >= 1.19 is needed (I have %s);'
+             ' will not set TPOS tag for any track.' % mutagen.version_string)
+      _did_old_mutagen_warning = True
+    tags.pop('discnumber')
 
   if OPTIONS.verbose:
     print 'Applying to %s:' % (os.path.basename(path))
