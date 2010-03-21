@@ -1,0 +1,171 @@
+#! /usr/bin/python
+## vi: sw=2 fileencoding=utf-8
+#
+# Copyright (c) 2009-2010 Adeodato Simó (dato@net.com.org.es)
+# Licensed under the terms of the MIT license.
+
+import re
+import os
+import sys
+import pprint
+import optparse
+
+import mutagen
+import mutagen.mp3
+import mutagen.easyid3
+
+# Group names in the following regular expresions must match tag names as
+# provided by Mutagen. Hence "tracknumber" and "date" over "track" and "year".
+
+BASENAME_REGEX = re.compile(
+    r'^(?:(?P<tracknumber>\d+)_)?(?P<artist>.+?) - (?P<title>.+)\.\w+$')
+
+DIRNAME_REGEX = re.compile(
+    r'^.*?/(?:\((?P<date>\d+)\w?\) )?(?P<album>[^/]+)(?:/(?:cd|disco|vol)\s*(?P<discnumber>\d+)(?:[^/]*))?$', re.I)
+
+FILENAME_FMT = '%(tracknumber)02d_%(artist)s - %(title)s'
+FILENAME_FMT_NO_TRACKNUMBER = '%(artist)s - %(title)s'
+
+OPTIONS = None
+
+##
+
+def main():
+  global OPTIONS
+  OPTIONS, args = parse_options()
+
+  try:
+    action = args.pop(0)
+  except IndexError:
+    print >>sys.stderr, 'E: need an action argument.'
+    return 1
+
+  if action == 'tagd':
+    if not args:
+      args = ['.']
+
+    for directory in args:
+      for root, dirs, files in os.walk(directory):
+        for f in sorted(files):
+          abspath = os.path.abspath(os.path.join(root, f))
+          tags = get_tags_from_abspath(abspath.decode('utf-8'))
+          tag_file(abspath, tags)
+
+  elif action == 'tagf':
+    for f in args:
+      abspath = os.path.abspath(f)
+      tags = get_tags_from_abspath(abspath.decode('utf-8'))
+      tag_file(f, tags)
+
+  elif action == 'tagb':
+    for f in args:
+      basename = os.path.basename(f).decode('utf-8')
+      tags = get_tags_from_basename(basename)
+      tag_file(f, tags)
+
+  elif action == 'rename':
+    for f in args:
+      tags = get_tags_with_mutagen(f)
+      extension = os.path.splitext(f)[1]
+      try:
+        tags['tracknumber'] = int(tags['tracknumber'].split('/')[0])
+      except KeyError:
+        filename_fmt = FILENAME_FMT_NO_TRACKNUMBER
+      else:
+        filename_fmt = FILENAME_FMT
+
+      newf = (filename_fmt % tags) + extension
+
+      if OPTIONS.verbose:
+        print newf
+
+      if not OPTIONS.dry_run:
+        os.rename(f, newf)
+
+  else:
+    print >>sys.stderr, 'E: unknown action %r' % (action,)
+
+##
+
+def get_tags_from_abspath(path):
+  tags = {}
+  dirname, basename = os.path.split(path)
+
+  basematch = BASENAME_REGEX.search(basename)
+  dirmatch = DIRNAME_REGEX.search(dirname)
+
+  for m in basematch, dirmatch:
+    if m is not None:
+      for k, v in m.groupdict().iteritems():
+        if v:
+          tags[k] = v
+
+  return tags
+
+##
+
+def get_tags_from_basename(basename):
+  tags = {}
+  match = BASENAME_REGEX.search(basename)
+
+  if match is not None:
+    for k, v in match.groupdict().iteritems():
+      if v:
+        tags[k] = v
+
+  return tags
+
+##
+
+def get_tags_with_mutagen(path):
+  info = mutagen.File(path)
+
+  if info is None:
+    return {}
+  elif isinstance(info, mutagen.mp3.MP3):
+    info = mutagen.easyid3.EasyID3(path)
+
+  return dict((x, y[0]) for x, y in info.iteritems())
+
+##
+
+def tag_file(path, tags):
+  info = mutagen.File(path)
+
+  if info is None:
+    return
+  elif isinstance(info, mutagen.mp3.MP3):
+    kwargs = { 'v1': 2 }
+    try:
+      info = mutagen.easyid3.EasyID3(path)
+    except mutagen.id3.ID3NoHeaderError:
+      info = mutagen.easyid3.EasyID3()
+      info.filename = path
+  else:
+    kwargs = {}
+
+  if OPTIONS.verbose:
+    print 'Applying to %s:' % (os.path.basename(path))
+    pprint.pprint(tags)
+
+  if not OPTIONS.dry_run:
+    if OPTIONS.clear_existing_tag_first:
+      info.delete()
+    info.update(tags)
+    info.save(**kwargs)
+
+##
+
+def parse_options():
+  p = optparse.OptionParser()
+
+  p.add_option('-v', '--verbose', action='store_true')
+  p.add_option('-n', '--dry-run', action='store_true')
+  p.add_option('-c', '--clear-existing-tag-first', action='store_true')
+
+  return p.parse_args()
+
+##
+
+if __name__ == '__main__':
+  main()
