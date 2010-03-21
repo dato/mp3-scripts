@@ -1,4 +1,8 @@
 #! /usr/bin/python
+## vi: fileencoding=utf-8
+#
+# Copyright (c) 2007-2010 Adeodato Simó (dato@net.com.org.es)
+# Licensed under the terms of the MIT license.
 
 """Submit specified tracks to Last.fm, using lastfmsubmitd.
 
@@ -118,7 +122,7 @@ def parse_options():
             usage='%prog [OPTIONS] FILES',
             description='Submit given tracks to Last.fm using lastfmsubmitd. '
                 'A time at which tracks were started to play can be specified.')
-    
+
     p.add_option('-t', '--time', action='store', dest='time_start', type='time',
             help='start time for submissions', metavar='TIME')
 
