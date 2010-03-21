@@ -77,7 +77,7 @@ def main():
         filename_fmt = FILENAME_FMT
 
       newf = os.path.join(os.path.dirname(f),
-                          (filename_fmt % tags) + extension)
+                          (filename_fmt % tags).replace('/', '-') + extension)
 
       if OPTIONS.verbose:
         print newf
