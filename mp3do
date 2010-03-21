@@ -76,7 +76,8 @@ def main():
       else:
         filename_fmt = FILENAME_FMT
 
-      newf = (filename_fmt % tags) + extension
+      newf = os.path.join(os.path.dirname(f),
+                          (filename_fmt % tags) + extension)
 
       if OPTIONS.verbose:
         print newf
