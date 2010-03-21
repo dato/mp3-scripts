@@ -1,5 +1,8 @@
 #! /usr/bin/python
-## vi: sw=2
+## vi: sw=2 fileencoding=utf-8
+#
+# Copyright (c) 2009-2010 Adeodato Simó (dato@net.com.org.es)
+# Licensed under the terms of the MIT license.
 
 import re
 import os
