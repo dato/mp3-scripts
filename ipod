@@ -1,0 +1,84 @@
+#! /usr/bin/python
+## vi: fileencoding=utf-8 sw=2
+#
+# Copyright (c) 2010 Adeodato Simó (dato@net.com.org.es)
+# Licensed under the terms of the MIT license.
+
+"""Do various things to an iPod.
+
+Usage:
+
+  % ipod [OPTIONS] <ACTION>
+
+Where action is one of:
+
+  sort_albums: set the "sort_album" property of each track to "$YEAR $ALBUM", so
+    that an artist's albums are always sorted by date and not by name.
+"""
+
+import sys
+
+import gflags
+import gpod
+
+FLAGS = gflags.FLAGS
+
+gflags.DEFINE_string('ipod_dir', '/mnt/ipod',
+                     'iPod directory (which must be mounted).')
+
+
+class Error(Exception):
+  """Base exception for this module."""
+
+
+class UnknownAction(Error):
+
+  def __init__(self, action):
+    Error.__init__(self, 'unknown action %r' % (action,))
+
+
+class CouldNotGetIpodDatabase(Error):
+
+  def __init__(self, mount_point):
+    Error.__init__(self, 'could not find iPod DB at %r' % (mount_point,))
+
+
+def get_ipod_db():
+  db = gpod.itdb_parse(FLAGS.ipod_dir, None)
+
+  if db is None:
+    raise CouldNotGetIpodDatabase(FLAGS.ipod_dir)
+  else:
+    return db
+
+
+def do_sort_albums():
+  db = get_ipod_db()
+
+  for track in gpod.sw_get_tracks(db):
+    if track.album and track.year:
+      track.sort_album = '%d %s' % (track.year, track.album)
+
+  gpod.itdb_write(db, None)
+
+
+def main(argv):
+  argv = FLAGS(argv)
+
+  if len(argv) != 2:
+    raise Error('need exactly one argument, the action to perform')
+  else:
+    action = argv[1]
+
+  if action == 'sort_albums':
+    do_sort_albums()
+  else:
+    raise UnknownAction(action)
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv)
+    except Error, e:
+        print >>sys.stderr, 'E: %s.' % (e,)
+        sys.exit(1)
