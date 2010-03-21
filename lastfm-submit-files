@@ -1,0 +1,148 @@
+#! /usr/bin/python
+## vi: fileencoding=utf-8
+#
+# Copyright (c) 2007-2010 Adeodato Simó (dato@net.com.org.es)
+# Licensed under the terms of the MIT license.
+
+"""Submit specified tracks to Last.fm, using lastfmsubmitd.
+
+Mutagen is needed to read track metadata.
+"""
+
+import sys
+import copy
+import time
+import optparse
+
+import mutagen
+import mutagen.mp3
+import mutagen.easyid3
+
+import lastfm.client
+
+try:
+    from dateutil.parser import parse as parse_date
+except ImportError:
+    _has_parse_date = False
+else:
+    _has_parse_date = True
+
+##
+
+def main():
+    options, args = parse_options()
+
+    if not args:
+        print >>sys.stderr, 'E: need at least one file to submit'
+        sys.exit(1)
+
+    tracks = []
+    client = lastfm.client.Client('lastfm_submit_files')
+
+    for track in args:
+        data = get_data(track)
+        if data:
+            tracks.append(data)
+        else:
+            print >>sys.stderr, 'Failed to read tags from %r' % (track,)
+            continue
+
+    if options.time_start is not None:
+        submit_time = options.time_start
+    else:
+        submit_time = options.time_end
+        for track in tracks[:-1]:
+            submit_time -= track['length']
+
+    for track in tracks:
+        track['time'] = time.gmtime(submit_time)
+        if options.squeeze:
+            submit_time += 1
+        else:
+            submit_time += track['length']
+
+    client.submit_many(tracks)
+
+##
+
+def get_data(path):
+    data = {}
+    info = mutagen.File(path)
+
+    if info is None:
+        return None
+
+    if isinstance(info, mutagen.mp3.MP3):
+        # EasyID3 does not include the .info part, which contains
+        # the length; so save it from the MP3 object.
+        dotinfo = info.info
+        info = mutagen.easyid3.EasyID3(path)
+        info.info = dotinfo
+
+    for x in ('artist', 'title'):
+        data[x] = info[x][0]
+
+    data['length'] = int(info.info.length)
+
+    return data
+
+##
+
+def parse_time(option, opt, value):
+    """Return seconds since epoch, parsing value with python-dateutil.
+
+    The string 'now' is recognized, and time.time() is returned. If dateutil
+    is not available, and value is not 'now' or an integer, OptionValueError
+    is raised.
+    """
+    if value == 'now':
+        return time.time()
+    else:
+        try:
+            return int(value)
+        except ValueError:
+            if _has_parse_date:
+                try:
+                    return int(parse_date(value).strftime('%s'))
+                except ValueError, e:
+                    raise optparse.OptionValueError(
+                        "can't parse %r as a timestamp: %s" % (value, e))
+            else:
+                raise optparse.OptionValueError(
+                    "bad value for %s: %s is not an int or 'now', "
+                    'and python-dateutil is not available' % (opt, value))
+
+class Option(optparse.Option):
+    TYPES = optparse.Option.TYPES + ('time',)
+    TYPE_CHECKER = copy.copy(optparse.Option.TYPE_CHECKER)
+    TYPE_CHECKER['time'] = parse_time
+
+def parse_options():
+    p = optparse.OptionParser(option_class=Option,
+            usage='%prog [OPTIONS] FILES',
+            description='Submit given tracks to Last.fm using lastfmsubmitd. '
+                'A time at which tracks were started to play can be specified.')
+
+    p.add_option('-t', '--time', action='store', dest='time_start', type='time',
+            help='start time for submissions', metavar='TIME')
+
+    p.add_option('-e', '--end', action='store', dest='time_end', type='time',
+            help='calculate start time so that submissions finish at the '
+                 'specified time (default: now)', metavar='TIME')
+
+    p.add_option('-s', '--squeeze', action='store_true', dest='squeeze',
+            help='separate play times by one second, instead of track length')
+
+    options, args = p.parse_args()
+
+    if options.time_start is None and options.time_end is None:
+        options.time_end = time.time()
+    elif None not in (options.time_start, options.time_end):
+        p.error('options -t and -e are mutually exclusive')
+
+    return options, args
+
+##
+
+if __name__ == '__main__':
+    main()
