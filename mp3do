@@ -23,7 +23,8 @@ BASENAME_REGEX = re.compile(
     r'^(?:(?P<tracknumber>\d+)_)?(?P<artist>.+?) - (?P<title>.+)\.\w+$')
 
 DIRNAME_REGEX = re.compile(
-    r'^.*?/(?:\((?P<date>\d+)\w?\) )?(?P<album>[^/]+)(?:/(?:cd|disco|vol)\s*(?P<discnumber>\d+)(?:[^/]*))?$', re.I)
+    r'^.*?/(?:\((?P<date>\d+)\w?\) )?(?P<album>[^/]+)'
+    r'(?:/(?:cd|disco|vol)\s*(?P<discnumber>\d+)(?:[^/]*))?$', re.I)
 
 FILENAME_FMT = '%(tracknumber)02d_%(artist)s - %(title)s'
 FILENAME_FMT_NO_TRACKNUMBER = '%(artist)s - %(title)s'
