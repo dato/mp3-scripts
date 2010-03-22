@@ -12,19 +12,35 @@ Usage:
 
 Where action is one of:
 
+  scrobble: send tracks to Last.fm using the "lastfmsubmitd" software.
+
   sort_albums: set the "sort_album" property of each track to "$YEAR $ALBUM", so
     that an artist's albums are always sorted by date and not by name.
 """
 
+# TODO(dato): scrobble immediately rather than using lastfmsubmitd.
+
+# TODO(dato): do something to scrobble tracks with recent_playcount > 1; the
+# problem is that only the timestamp of the last play is stored in the DB, so
+# one has to "invent" sensible timestamps for previous plays.
+
+import operator
 import sys
+import time
 
 import gflags
 import gpod
+import lastfm.client
 
 FLAGS = gflags.FLAGS
 
 gflags.DEFINE_string('ipod_dir', '/mnt/ipod',
                      'iPod directory (which must be mounted).')
+
+gflags.DEFINE_bool('sync_after_scrobble', False,
+                   'write the iTunes DB after scrobbling tracks, so that '
+                   '"recent playcounts" are reset (will make gtkpod rehash '
+                   'everything; you may want to sync from gtkpod instead).')
 
 
 class Error(Exception):
@@ -52,6 +68,40 @@ def get_ipod_db():
     return db
 
 
+def get_lastfm_dict(track):
+  """Get a dictionary suitable for submission with lastfmsubmitd."""
+  if not track.title or not track.artist:
+    return None
+
+  d = {}
+  d['title'] = track.title
+  d['artist'] = track.artist
+  d['length'] = int(track.tracklen / 1000)  # tracklen is in milliseconds.
+  d['time'] = time.gmtime(int(track.time_played))
+
+  if track.album:
+    d['album'] = track.album
+
+  return d
+
+
+def do_scrobble():
+  db = gpod.itdb_parse(FLAGS.ipod_dir, None)
+
+  recent_tracks = sorted([track for track in gpod.sw_get_tracks(db)
+                          if track.recent_playcount > 0],
+                         key=operator.attrgetter('time_played'))
+
+  # TODO(dato): we're assuming recent_playcount == 1 for every track.
+  scrobble_tracks = filter(None, map(get_lastfm_dict, recent_tracks))
+
+  if scrobble_tracks:
+    client = lastfm.client.Client('ipod-scrobble')
+    client.submit_many(scrobble_tracks)
+    if FLAGS.sync_after_scrobble:
+      gpod.itdb_write(db, None)  # Reset "recent_playcount".
+
+
 def do_sort_albums():
   db = get_ipod_db()
 
@@ -70,7 +120,9 @@ def main(argv):
   else:
     action = argv[1]
 
-  if action == 'sort_albums':
+  if action == 'scrobble':
+    do_scrobble()
+  elif action == 'sort_albums':
     do_sort_albums()
   else:
     raise UnknownAction(action)
