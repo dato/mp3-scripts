@@ -1,0 +1,262 @@
+#! /usr/bin/python2.6
+## vi: fileencoding=utf-8 sw=2
+#
+# Copyright (c) 2010 Adeodato Simó (dato@net.com.org.es)
+# Licensed under the terms of the MIT license.
+
+"""Provide a filesystem out of an iPod database.
+
+This program provides a virtual filesystem of the music available in an iPod,
+in a way that is easily navigable: directories for artists and albums, files
+that include the title for tracks.
+
+See below about customizing the tree structure. XXX TODO
+"""
+
+import collections
+import errno
+import itertools
+import logging
+import operator
+import os
+import stat
+import sys
+
+import fuse
+import gpod
+
+XXX_DEFAULT_IPOD_DIR = '/mnt/ipod'  # TODO(dato): plug into fuse's optparse.
+
+fuse.fuse_python_api = (0, 2)
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(levelname)s: %(message)s', stream=sys.stdout)
+
+class Error(Exception):
+  """Base exception for this module."""
+
+
+class CouldNotGetIpodDatabase(Error):
+
+  def __init__(self, mount_point):
+    Error.__init__(self, 'could not find iPod DB at %r' % (mount_point,))
+
+
+class Track(object):
+
+  def __init__(self, itunes_track):
+    self._itunes_track = itunes_track
+    self._path = None
+    self._stat = None
+
+  @property
+  def stat_info(self):
+    if self._stat is None:
+      self._stat = os.stat(self.path)
+
+    return self._stat
+
+  @property
+  def path(self):
+    if self._path is None:
+      ipod_dir = XXX_DEFAULT_IPOD_DIR
+      try:
+        self._path = gpod.itdb_resolve_path(
+            ipod_dir, self._itunes_track.ipod_path.split(':'))
+      except TypeError:  # Old libgpod, itdb_resolve_path not wrapped correctly.
+        self._path = my_itdb_resolve_path(ipod_dir, self._itunes_track)
+
+    return self._path
+
+
+def my_itdb_resolve_path(ipod_dir, itunes_track):
+  """Return the absolute path of a track, like gpod.itdb_resolve_path()."""
+  components = itunes_track.ipod_path.split(':')[1:]
+  track_path = ipod_dir
+
+  for x in components:
+    for func in [lambda x: x, lambda x: x.lower()]:
+      newpath = os.path.join(track_path, func(x))
+      if os.path.exists(newpath):
+        track_path = newpath
+        break
+    else:
+      raise Error("can't find path for %s" % (itunes_track.ipod_path,))
+
+  return track_path
+
+
+class IpodFs(fuse.Fuse):
+
+  def __init__(self, ipod_dir=XXX_DEFAULT_IPOD_DIR):
+    super(IpodFs, self).__init__()
+    db = gpod.itdb_parse(ipod_dir, None)
+
+    if db is None:
+      raise CouldNotGetIpodDatabase(ipod_dir)
+
+    all_tracks = gpod.sw_get_tracks(db)
+    tracks_by_album = collections.defaultdict(list)
+    compilation_tracks = []
+    collection_artists = collections.defaultdict(dict)
+
+    # These are the ones to be accessible from getattr(), read(), etc.
+    self.path_to_ipod_track = {}
+    self.filesystem_components = {'': collection_artists}
+
+    # First pass: classify by (artist, album).
+    for track in all_tracks:
+      album = track.album or '{No album}'
+
+      if track.compilation:
+        key = ('Various Artists', album)
+        compilation_tracks.append(track)
+      else:
+        key = (track.albumartist or track.artist, album)
+
+      tracks_by_album[key].append(track)
+
+    # Second pass: index in a two-level dictionary, by artist and then album
+    # (with year); warn about inconsistencies of date within an album.
+    for (artist, album), tracks in tracks_by_album.iteritems():
+      tracks.sort(key=operator.attrgetter('cd_nr', 'track_nr'))
+      tracks_with_subdirectories = {}
+
+      for cd_nr, cd_tracks in itertools.groupby(
+          tracks, operator.attrgetter('cd_nr')):
+        if cd_nr:
+          tracks_with_subdirectories['cd%d' % (cd_nr,)] = list(cd_tracks)
+
+      if not tracks_with_subdirectories:
+        tracks_with_subdirectories = tracks
+
+      years = set(t.year for t in tracks if t.year)
+
+      if len(years) == 1:
+        album = '(%d) %s' % (years.pop(), album)
+      elif len(years) > 1:
+        logging.warn(
+            '%s\'s album "%s" has tracks with different years (%s); using %d.',
+            artist, album, ', '.join(map(str, years)), min(years))
+        album = '(%d) %s' % (min(years), album)
+
+      collection_artists[artist.replace('/', '--')] \
+          [album.replace('/', '--')] = tracks_with_subdirectories
+
+    Pair = collections.namedtuple('Pair', 'relpath items')
+    pending = [Pair(k, v) for k, v in collection_artists.iteritems()]
+
+    while pending:
+      pair = pending.pop(0)
+
+      if isinstance(pair.items, dict):
+        pending.extend(Pair(os.path.join(pair.relpath, k), v)
+                       for k, v in pair.items.iteritems())
+      else:
+        dir_path = os.path.join('/', pair.relpath)
+        track_names = []
+        for track in pair.items:
+          fmt_artist = track.artist or '<No artist>'
+          fmt_title = track.title or '<No title>'
+
+          if track.track_nr:
+            filename = '%02d_%s - %s.mp3' % (track.track_nr,
+                                             fmt_artist, fmt_title)
+          else:
+            filename = '%s - %s.mp3' % (fmt_artist, fmt_title)
+
+          filepath = os.path.join(dir_path, filename)
+          track_names.append(filename.replace('/', '--'))
+          self.path_to_ipod_track[filepath] = Track(track)
+
+        pair.items[:] = track_names
+
+  def getattr(self, path):
+    st = fuse.Stat()
+
+    try:
+      track = self.path_to_ipod_track[path]
+    except KeyError:
+      try:
+        self._get_dict_for_path(path)
+      except KeyError:
+        return -errno.ENOENT
+      else:
+        st.st_nlink = 2
+        st.st_mode = stat.S_IFDIR | 0555
+    else:
+      st.st_mode = stat.S_IFREG | 0444
+      st.st_nlink = 1
+      st.st_size = track.stat_info.st_size
+      st.st_uid = track.stat_info.st_uid
+      st.st_gid = track.stat_info.st_gid
+      st.st_atime = track.stat_info.st_atime
+      st.st_mtime = track.stat_info.st_mtime
+      st.st_ctime = track.stat_info.st_ctime
+
+    return st
+
+  def readdir(self, path, offset):
+    mydict = self._get_dict_for_path(path)
+
+    for x in itertools.chain(['.', '..'], mydict):
+      yield fuse.Direntry(x)
+
+  def open(self, path, flags):
+    if path not in self.path_to_ipod_track:
+      return -errno.ENOENT
+    elif flags & (os.O_WRONLY | os.O_RDWR):
+      return -errno.EACCES
+
+  def read(self, path, size, offset):
+    try:
+      track = self.path_to_ipod_track[path]
+    except KeyError:
+      return -errno.ENOENT
+
+    actual_size = track.stat_info.st_size
+
+    if offset >= actual_size:
+      return ''
+
+    if offset + size > actual_size:
+      size = actual_size - offset
+
+    # TODO(dato): do not open the file each time?
+    try:
+      fd = os.open(track.path, os.O_RDONLY)
+    except OSError, e:
+      return -e.errno
+    else:
+      if offset:
+        os.lseek(fd, offset, os.SEEK_SET)
+      return os.read(fd, size)
+    finally:
+      os.close(fd)
+
+  def _get_dict_for_path(self, path):
+    components = path.split('/') if path != '/' else ['']
+    mydict = self.filesystem_components
+
+    while components:
+      if not isinstance(mydict, dict):
+        raise KeyError('ran out of dicts.')
+      else:
+        c = components.pop(0)
+        mydict = mydict[c]
+
+    return mydict
+
+
+def main():
+  server = IpodFs()
+  server.parse(errex=1)
+  server.main()
+
+
+if __name__ == '__main__':
+  try:
+    main()
+  except Error, e:
+    logging.error('%s.', e)
+    sys.exit(1)
