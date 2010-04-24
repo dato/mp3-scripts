@@ -80,7 +80,7 @@ class IpodFs(fuse.Fuse):
 
     # These are the ones to be accessible from getattr(), read(), etc.
     self.path_to_ipod_track = {}
-    self.filesystem_components = {'': collection_artists}
+    self.filesystem_components = {}
 
     # First pass: classify by (artist, album).
     for track in all_tracks:
@@ -148,6 +148,10 @@ class IpodFs(fuse.Fuse):
           self.path_to_ipod_track[filepath] = Track(track)
 
         pair.items[:] = track_names
+
+    # We do not use collection_artists directly because it's a defaultdict(),
+    # and we need dict semantics for our use of self.filesystem_components.
+    self.filesystem_components[''] = dict(collection_artists)
 
   def getattr(self, path):
     st = fuse.Stat()
