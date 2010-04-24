@@ -14,6 +14,7 @@ import optparse
 
 import mutagen
 import mutagen.mp3
+import mutagen.mp4
 import mutagen.easyid3
 
 # Group names in the following regular expresions must match tag names as
@@ -30,6 +31,18 @@ FILENAME_FMT = '%(tracknumber)02d_%(artist)s - %(title)s'
 FILENAME_FMT_NO_TRACKNUMBER = '%(artist)s - %(title)s'
 
 OPTIONS = None
+
+MP4_TAGS = {
+    'album': '\xa9alb',
+    'artist': '\xa9ART',
+    'date': '\xa9day',
+    'discnumber': 'disk',
+    'title': '\xa9nam',
+    'tracknumber': 'trkn',
+}
+
+REVERSE_MP4_TAGS = dict((v, k) for k, v in MP4_TAGS.iteritems())
+
 
 ##
 
@@ -128,6 +141,12 @@ def get_tags_with_mutagen(path):
     return {}
   elif isinstance(info, mutagen.mp3.MP3):
     info = mutagen.easyid3.EasyID3(path)
+  elif isinstance(info, mutagen.mp4.MP4):
+    info = dict((REVERSE_MP4_TAGS[t], info[t])
+                for t in info if t in REVERSE_MP4_TAGS)
+    for t in ['discnumber', 'tracknumber']:
+      if t in info:
+        info[t] = ['/'.join(map(str, x)) for x in info[t]]
 
   return dict((x, y[0]) for x, y in info.iteritems())
 
@@ -137,6 +156,7 @@ _did_old_mutagen_warning = False
 
 def tag_file(path, tags):
   info = mutagen.File(path)
+  kwargs = {}
 
   if info is None:
     return
@@ -147,8 +167,15 @@ def tag_file(path, tags):
     except mutagen.id3.ID3NoHeaderError:
       info = mutagen.easyid3.EasyID3()
       info.filename = path
-  else:
-    kwargs = {}
+  elif isinstance(info, mutagen.mp4.MP4):
+    tags = tags.copy()
+    for t in ['discnumber', 'tracknumber']:
+      if t in tags:
+        if '/' in tags[t]:
+          tags[t] = [tuple(map(int, tags[t].split('/')))]
+        else:
+          tags[t] = [(int(tags[t]), 0)]
+    tags = dict((MP4_TAGS[t], tags[t]) for t in tags)
 
   if ('discnumber' in tags
       and mutagen.version < (1, 19)):
