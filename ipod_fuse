@@ -59,31 +59,9 @@ class Track(object):
   @property
   def path(self):
     if self._path is None:
-      ipod_dir = XXX_DEFAULT_IPOD_DIR
-      try:
-        self._path = gpod.itdb_resolve_path(
-            ipod_dir, self._itunes_track.ipod_path.split(':'))
-      except TypeError:  # Old libgpod, itdb_resolve_path not wrapped correctly.
-        self._path = my_itdb_resolve_path(ipod_dir, self._itunes_track)
+      self._path = gpod.itdb_filename_on_ipod(self._itunes_track)
 
     return self._path
-
-
-def my_itdb_resolve_path(ipod_dir, itunes_track):
-  """Return the absolute path of a track, like gpod.itdb_resolve_path()."""
-  components = itunes_track.ipod_path.split(':')[1:]
-  track_path = ipod_dir
-
-  for x in components:
-    for func in [lambda x: x, lambda x: x.lower()]:
-      newpath = os.path.join(track_path, func(x))
-      if os.path.exists(newpath):
-        track_path = newpath
-        break
-    else:
-      raise Error("can't find path for %s" % (itunes_track.ipod_path,))
-
-  return track_path
 
 
 class IpodFs(fuse.Fuse):
