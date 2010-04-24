@@ -103,13 +103,16 @@ def do_scrobble():
 
 
 def do_sort_albums():
-  db = get_ipod_db()
+  try:
+    db = gpod.Database(FLAGS.ipod_dir)
+  except gpod.DatabaseException:
+    raise CouldNotGetIpodDatabase(FLAGS.ipod_dir)
 
-  for track in gpod.sw_get_tracks(db):
-    if track.album and track.year:
-      track.sort_album = '%d %s' % (track.year, track.album)
+  for track in db:
+    if track['album'] and track['year']:
+      track['sort_album'] = '%d %s' % (track['year'], track['album'])
 
-  gpod.itdb_write(db, None)
+  db.close()
 
 
 def main(argv):
