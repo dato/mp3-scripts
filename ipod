@@ -132,8 +132,8 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    try:
-        main(sys.argv)
-    except Error, e:
-        print >>sys.stderr, 'E: %s.' % (e,)
-        sys.exit(1)
+  try:
+    main(sys.argv)
+  except Error, e:
+    print >>sys.stderr, 'E: %s.' % (e,)
+    sys.exit(1)
