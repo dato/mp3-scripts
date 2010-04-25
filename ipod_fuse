@@ -100,10 +100,24 @@ class IpodFs(fuse.Fuse):
       tracks.sort(key=operator.attrgetter('cd_nr', 'track_nr'))
       tracks_with_subdirectories = {}
 
-      for cd_nr, cd_tracks in itertools.groupby(
-          tracks, operator.attrgetter('cd_nr')):
+      for cd_nr, cd_tracks in (
+          itertools.groupby(tracks, operator.attrgetter('cd_nr'))):
         if cd_nr:
-          tracks_with_subdirectories['cd%d' % (cd_nr,)] = list(cd_tracks)
+          # Sometimes the album has only one CD, yet cd_nr/cds will be set to
+          # 1/1 instead of 0. We take special care of this case, and do not
+          # create a spurious "cd1" subdirectory.
+          cd_tracks = list(cd_tracks)
+          all_cds_tags = set(t.cds for t in cd_tracks)
+
+          if len(all_cds_tags) == 1:
+            cds = all_cds_tags.pop()
+          else:
+            logging.warn('%s\'s album "%s" has different values for "cds" '
+                         '(number of CDs).', artist, album)
+            cds = max(all_cds_tags)
+
+          if cds > 1:
+            tracks_with_subdirectories['cd%d' % (cd_nr,)] = list(cd_tracks)
 
       if not tracks_with_subdirectories:
         tracks_with_subdirectories = tracks
