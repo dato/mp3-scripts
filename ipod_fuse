@@ -21,6 +21,7 @@ import operator
 import os
 import stat
 import sys
+import time
 
 import fuse
 import gpod
@@ -68,6 +69,7 @@ class IpodFs(fuse.Fuse):
 
   def __init__(self, ipod_dir=XXX_DEFAULT_IPOD_DIR):
     super(IpodFs, self).__init__()
+    self.mtime = int(time.time())
     db = gpod.itdb_parse(ipod_dir, None)
 
     if db is None:
@@ -180,6 +182,7 @@ class IpodFs(fuse.Fuse):
       else:
         st.st_nlink = 2
         st.st_mode = stat.S_IFDIR | 0555
+        st.st_mtime = self.mtime
     else:
       st.st_mode = stat.S_IFREG | 0444
       st.st_nlink = 1
