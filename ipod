@@ -37,6 +37,9 @@ FLAGS = gflags.FLAGS
 gflags.DEFINE_string('ipod_dir', '/mnt/ipod',
                      'iPod directory (which must be mounted).')
 
+gflags.DEFINE_integer('time_skew', 0,
+                      'number of seconds the iPod timestamps are ahead.')
+
 gflags.DEFINE_bool('sync_after_scrobble', False,
                    'write the iTunes DB after scrobbling tracks, so that '
                    '"recent playcounts" are reset (will make gtkpod rehash '
@@ -77,7 +80,7 @@ def get_lastfm_dict(track):
   d['title'] = track.title
   d['artist'] = track.artist
   d['length'] = int(track.tracklen / 1000)  # tracklen is in milliseconds.
-  d['time'] = time.gmtime(int(track.time_played))
+  d['time'] = time.gmtime(int(track.time_played) - FLAGS.time_skew)
 
   if track.album:
     d['album'] = track.album
