@@ -97,31 +97,22 @@ class IpodFs(fuse.Fuse):
       tracks_by_album[key].append(track)
 
     # Second pass: index in a two-level dictionary, by artist and then album
-    # (with year); warn about inconsistencies of date within an album.
+    # (with year); warn about inconsistencies of date within an album. If there
+    # are multiple CDs in the album, add one extra level.
     for (artist, album), tracks in tracks_by_album.iteritems():
       tracks.sort(key=operator.attrgetter('cd_nr', 'track_nr'))
-      tracks_with_subdirectories = {}
 
-      for cd_nr, cd_tracks in (
-          itertools.groupby(tracks, operator.attrgetter('cd_nr'))):
-        if cd_nr:
-          # Sometimes the album has only one CD, yet cd_nr/cds will be set to
-          # 1/1 instead of 0. We take special care of this case, and do not
-          # create a spurious "cd1" subdirectory.
-          cd_tracks = list(cd_tracks)
-          all_cds_tags = set(t.cds for t in cd_tracks)
-
-          if len(all_cds_tags) == 1:
-            cds = all_cds_tags.pop()
-          else:
-            logging.warn('%s\'s album "%s" has different values for "cds" '
-                         '(number of CDs).', artist, album)
-            cds = max(all_cds_tags)
-
-          if cds > 1:
-            tracks_with_subdirectories['cd%d' % (cd_nr,)] = list(cd_tracks)
-
-      if not tracks_with_subdirectories:
+      # Sometimes the album has only one CD, yet cd_nr/cds will be set to 1/1
+      # instead of 0. In some other cases, an album has more that one CD, and
+      # cd_nr is set appropriately, but cds is always 0. By checking how many
+      # different cd_nr there actually are, we avoid creating spurious "cd1"
+      # subdirectories, but get the other case right as well.
+      if len(set(t.cd_nr for t in tracks)) > 1:
+        tracks_with_subdirectories = {}
+        for cd_nr, cd_tracks in (
+            itertools.groupby(tracks, operator.attrgetter('cd_nr'))):
+          tracks_with_subdirectories['cd%d' % (cd_nr,)] = list(cd_tracks)
+      else:
         tracks_with_subdirectories = tracks
 
       years = set(t.year for t in tracks if t.year)
