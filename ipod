@@ -24,6 +24,7 @@ Where action is one of:
 # problem is that only the timestamp of the last play is stored in the DB, so
 # one has to "invent" sensible timestamps for previous plays.
 
+import datetime
 import operator
 import sys
 import time
@@ -40,10 +41,10 @@ gflags.DEFINE_string('ipod_dir', '/mnt/ipod',
 gflags.DEFINE_integer('time_skew', 0,
                       'number of seconds the iPod timestamps are ahead.')
 
-gflags.DEFINE_bool('sync_after_scrobble', False,
-                   'write the iTunes DB after scrobbling tracks, so that '
-                   '"recent playcounts" are reset (will make gtkpod rehash '
-                   'everything; you may want to sync from gtkpod instead).')
+gflags.DEFINE_boolean('sync_after_scrobble', False,
+                      'write the iTunes DB after scrobbling tracks, so that '
+                      'recent playcounts will be reset to 0 (this will be '
+                      'made in a way compatible with gtkpod).')
 
 
 class Error(Exception):
@@ -63,37 +64,42 @@ class CouldNotGetIpodDatabase(Error):
 
 
 def get_ipod_db():
-  db = gpod.itdb_parse(FLAGS.ipod_dir, None)
-
-  if db is None:
+  try:
+    return gpod.Database(FLAGS.ipod_dir)
+  except gpod.DatabaseException:
     raise CouldNotGetIpodDatabase(FLAGS.ipod_dir)
-  else:
-    return db
 
 
 def get_lastfm_dict(track):
   """Get a dictionary suitable for submission with lastfmsubmitd."""
-  if not track.title or not track.artist:
+  if not track['title'] or not track['artist']:
     return None
 
-  d = {}
-  d['title'] = track.title
-  d['artist'] = track.artist
-  d['length'] = int(track.tracklen / 1000)  # tracklen is in milliseconds.
-  d['time'] = time.gmtime(int(track.time_played) - FLAGS.time_skew)
+  # This is horrific, because gpod.Track uses datetime.fromtimestamp() instead
+  # of utctimestamp(), sigh. Let's hope they don't change it and break backwards
+  # compatibility, and that FLAGS.time_skew does not ever make us cross a DST
+  # boundary.
+  stamp = int(time.mktime(track['time_played'].timetuple()))
+  utc_time = time.gmtime(stamp - FLAGS.time_skew)
 
-  if track.album:
-    d['album'] = track.album
+  d = {}
+  d['time'] = utc_time
+  d['title'] = track['title']
+  d['artist'] = track['artist']
+  d['length'] = int(track['tracklen'] / 1000)  # tracklen is in milliseconds.
+
+  if track['album']:
+    d['album'] = track['album']
 
   return d
 
 
 def do_scrobble():
-  db = gpod.itdb_parse(FLAGS.ipod_dir, None)
+  db = get_ipod_db()
 
-  recent_tracks = sorted([track for track in gpod.sw_get_tracks(db)
-                          if track.recent_playcount > 0],
-                         key=operator.attrgetter('time_played'))
+  recent_tracks = sorted([track for track in db
+                          if track['recent_playcount'] > 0],
+                         key=operator.itemgetter('time_played'))
 
   # TODO(dato): we're assuming recent_playcount == 1 for every track.
   scrobble_tracks = filter(None, map(get_lastfm_dict, recent_tracks))
@@ -102,14 +108,11 @@ def do_scrobble():
     client = lastfm.client.Client('ipod-scrobble')
     client.submit_many(scrobble_tracks)
     if FLAGS.sync_after_scrobble:
-      gpod.itdb_write(db, None)  # Reset "recent_playcount".
+      db.close()  # Reset "recent_playcount".
 
 
 def do_sort_albums():
-  try:
-    db = gpod.Database(FLAGS.ipod_dir)
-  except gpod.DatabaseException:
-    raise CouldNotGetIpodDatabase(FLAGS.ipod_dir)
+  db = get_ipod_db()
 
   for track in db:
     if track['album'] and track['year']:
