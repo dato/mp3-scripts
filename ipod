@@ -25,6 +25,7 @@ Where action is one of:
 # one has to "invent" sensible timestamps for previous plays.
 
 import datetime
+import logging
 import operator
 import sys
 import time
@@ -34,6 +35,8 @@ import gpod
 import lastfm.client
 
 FLAGS = gflags.FLAGS
+
+gflags.DEFINE_boolean('silent', False, 'do not emit any warnings, only errors.')
 
 gflags.DEFINE_string('ipod_dir', '/mnt/ipod',
                      'iPod directory (which must be mounted).')
@@ -104,6 +107,14 @@ def do_scrobble():
   # TODO(dato): we're assuming recent_playcount == 1 for every track.
   scrobble_tracks = filter(None, map(get_lastfm_dict, recent_tracks))
 
+  playcount_gt_1 = [track for track in recent_tracks
+                    if track['recent_playcount'] > 1]
+
+  if playcount_gt_1:
+    fmt_gt_1 = [ '  * %(artist)s - %(title)s' % t for t in playcount_gt_1]
+    logging.warn('\n'.join(['these tracks have a recent playcount >> 1, but '
+                            'will be scrobbled only once:'] + fmt_gt_1))
+
   if scrobble_tracks:
     client = lastfm.client.Client('ipod-scrobble')
     client.submit_many(scrobble_tracks)
@@ -123,6 +134,10 @@ def do_sort_albums():
 
 def main(argv):
   argv = FLAGS(argv)
+
+  logging_level = logging.INFO if not FLAGS.silent else logging.ERROR
+  logging.basicConfig(level=logging_level,
+                      format='%(levelname)s: %(message)s', stream=sys.stdout)
 
   if len(argv) != 2:
     raise Error('need exactly one argument, the action to perform')
