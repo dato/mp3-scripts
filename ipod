@@ -111,9 +111,11 @@ def do_scrobble():
                     if track['recent_playcount'] > 1]
 
   if playcount_gt_1:
-    fmt_gt_1 = [ '  * %(artist)s - %(title)s' % t for t in playcount_gt_1]
-    logging.warn('\n'.join(['these tracks have a recent playcount >> 1, but '
-                            'will be scrobbled only once:'] + fmt_gt_1))
+    fmt_gt_1 = ['  * %(artist)s - %(title)s (%(playcount)s)' % t
+                for t in playcount_gt_1]
+    logging.warn('\n'.join([
+        'the following tracks have a recent playcount >> 1, but will be '
+        'scrobbled only once:'] + fmt_gt_1))
 
   if scrobble_tracks:
     client = lastfm.client.Client('ipod-scrobble')
