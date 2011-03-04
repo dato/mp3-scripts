@@ -1,7 +1,7 @@
 #! /usr/bin/python
 ## vi: fileencoding=utf-8 sw=2
 #
-# Copyright (c) 2010 Adeodato Simó (dato@net.com.org.es)
+# Copyright (c) 2010-2011 Adeodato Simó (dato@net.com.org.es)
 # Licensed under the terms of the MIT license.
 
 """Do various things to an iPod.
@@ -27,6 +27,7 @@ Where action is one of:
 import datetime
 import logging
 import operator
+import re
 import sys
 import time
 
@@ -128,8 +129,20 @@ def do_sort_albums():
   db = get_ipod_db()
 
   for track in db:
-    if track['album'] and track['year']:
-      track['sort_album'] = '%d %s' % (track['year'], track['album'])
+    if track['compilation']:
+      fmt = 'zz %(album)s'
+    else:
+      fmt = ('%(artist)s %(year)d %(album)s' if track['year']
+             else '%(artist)s %(album)s')
+
+    tags = {'year': track['year'],
+            'album': track['album'],
+            'artist': re.sub(r'^The\s+', '', track['artist'])}
+
+    sort_album = fmt % tags
+
+    if track['sort_album'] != sort_album:
+      track['sort_album'] = sort_album
 
   db.close()
 
