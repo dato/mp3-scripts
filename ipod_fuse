@@ -128,7 +128,7 @@ class IpodFs(fuse.Fuse):
       collection_artists[artist.replace('/', '--')] \
           [album.replace('/', '--')] = tracks_with_subdirectories
 
-    Pair = collections.namedtuple('Pair', 'relpath items')
+    Pair = collections.namedtuple('Pair', 'relpath, items')
     pending = [Pair(k, v) for k, v in collection_artists.iteritems()]
 
     while pending:
@@ -150,8 +150,10 @@ class IpodFs(fuse.Fuse):
           else:
             filename = '%s - %s.mp3' % (fmt_artist, fmt_title)
 
+          filename = filename.replace('/', '--')
+          track_names.append(filename)
+
           filepath = os.path.join(dir_path, filename)
-          track_names.append(filename.replace('/', '--'))
           self.path_to_ipod_track[filepath] = Track(track)
 
         pair.items[:] = track_names
